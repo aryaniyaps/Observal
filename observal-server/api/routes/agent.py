@@ -200,3 +200,30 @@ async def install_agent(
     await db.commit()
 
     return AgentInstallResponse(agent_id=agent.id, ide=req.ide, config_snippet=snippet)
+
+
+@router.delete("/{agent_id}")
+async def delete_agent(
+    agent_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from models.eval import EvalRun, Scorecard
+    from models.feedback import Feedback
+
+    result = await db.execute(select(Agent).where(Agent.id == agent_id))
+    agent = result.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if agent.created_by != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Delete related records
+    for model, col in [(AgentDownload, AgentDownload.agent_id), (Feedback, Feedback.listing_id), (Scorecard, Scorecard.agent_id), (EvalRun, EvalRun.agent_id)]:
+        rows = (await db.execute(select(model).where(col == agent_id))).scalars().all()
+        for r in rows:
+            await db.delete(r)
+
+    await db.delete(agent)
+    await db.commit()
+    return {"deleted": str(agent_id)}

@@ -38,8 +38,8 @@ class McpListing(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    custom_fields: Mapped[list["McpCustomField"]] = relationship(back_populates="listing", lazy="selectin")
-    validation_results: Mapped[list["McpValidationResult"]] = relationship(back_populates="listing", lazy="selectin")
+    custom_fields: Mapped[list["McpCustomField"]] = relationship(back_populates="listing", lazy="selectin", cascade="all, delete-orphan")
+    validation_results: Mapped[list["McpValidationResult"]] = relationship(back_populates="listing", lazy="selectin", cascade="all, delete-orphan")
 
 
 class McpCustomField(Base):

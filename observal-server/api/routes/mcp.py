@@ -110,3 +110,29 @@ async def install_mcp(
 
     snippet = generate_config(listing, req.ide)
     return McpInstallResponse(listing_id=listing.id, ide=req.ide, config_snippet=snippet)
+
+
+@router.delete("/{listing_id}")
+async def delete_mcp(
+    listing_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from models.feedback import Feedback
+
+    result = await db.execute(select(McpListing).where(McpListing.id == listing_id))
+    listing = result.scalar_one_or_none()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if listing.submitted_by != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Delete related records
+    for model, col in [(McpDownload, McpDownload.listing_id), (Feedback, Feedback.listing_id)]:
+        rows = (await db.execute(select(model).where(col == listing_id))).scalars().all()
+        for r in rows:
+            await db.delete(r)
+
+    await db.delete(listing)
+    await db.commit()
+    return {"deleted": str(listing_id)}

@@ -15,7 +15,11 @@ async function request(path: string, options: RequestInit = {}) {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(body.detail || res.statusText);
+    const detail = body.detail;
+    if (Array.isArray(detail)) {
+      throw new Error(detail.map((e: any) => `${e.loc?.slice(-1)?.[0] || "field"}: ${e.msg}`).join("; "));
+    }
+    throw new Error(typeof detail === "string" ? detail : res.statusText);
   }
   if (res.status === 204) return null;
   return res.json();

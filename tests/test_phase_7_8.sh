@@ -206,6 +206,86 @@ assert_status "T8.11 Self-demote blocked" 400 "$STATUS"
 
 # ══════════════════════════════════════════════════════════
 bold ""
+bold "═══ Phase 8b: User Creation & Permissions ═══"
+# ══════════════════════════════════════════════════════════
+
+# T8.12 — Create Developer User
+parse_response "$(curl_post "$BASE_URL/api/v1/admin/users" \
+  '{"email":"dev@test.com","name":"Dev User","role":"developer"}' "${AUTH[@]}")"
+assert_status "T8.12 Create dev" 200 "$STATUS"
+assert_json_field "T8.12 role" "$BODY" ".role" "developer"
+assert_json_nonempty "T8.12 api_key" "$BODY" ".api_key"
+DEV_KEY=$(echo "$BODY" | jq -r '.api_key')
+DEV_ID=$(echo "$BODY" | jq -r '.id')
+DEV_AUTH=(-H "X-API-Key: $DEV_KEY")
+
+# T8.13 — Create Regular User
+parse_response "$(curl_post "$BASE_URL/api/v1/admin/users" \
+  '{"email":"user@test.com","name":"Regular User","role":"user"}' "${AUTH[@]}")"
+assert_status "T8.13 Create user" 200 "$STATUS"
+assert_json_field "T8.13 role" "$BODY" ".role" "user"
+USR_KEY=$(echo "$BODY" | jq -r '.api_key')
+USR_AUTH=(-H "X-API-Key: $USR_KEY")
+
+# T8.14 — Duplicate Email Rejected
+parse_response "$(curl_post "$BASE_URL/api/v1/admin/users" \
+  '{"email":"dev@test.com","name":"Dup","role":"user"}' "${AUTH[@]}")"
+assert_status "T8.14 Dup email" 400 "$STATUS"
+
+# T8.15 — Developer Whoami
+parse_response "$(curl_get "$BASE_URL/api/v1/auth/whoami" "${DEV_AUTH[@]}")"
+assert_status "T8.15 Dev whoami" 200 "$STATUS"
+assert_json_field "T8.15 role" "$BODY" ".role" "developer"
+
+# T8.16 — User Cannot Access Admin
+parse_response "$(curl_get "$BASE_URL/api/v1/admin/users" "${USR_AUTH[@]}")"
+assert_status "T8.16 User no admin" 403 "$STATUS"
+
+# T8.17 — Developer Cannot Access Admin
+parse_response "$(curl_get "$BASE_URL/api/v1/admin/users" "${DEV_AUTH[@]}")"
+assert_status "T8.17 Dev no admin" 403 "$STATUS"
+
+# ══════════════════════════════════════════════════════════
+bold ""
+bold "═══ Phase 8c: Delete MCP & Agent ═══"
+# ══════════════════════════════════════════════════════════
+
+# Developer submits an MCP
+parse_response "$(curl_post "$BASE_URL/api/v1/mcps/submit" \
+  "{\"git_url\":\"https://github.com/example/del-test.git\",\"name\":\"del-mcp\",\"version\":\"1.0.0\",\"description\":\"$LONG_DESC\",\"category\":\"utilities\",\"owner\":\"Dev\",\"supported_ides\":[\"cursor\"]}" "${DEV_AUTH[@]}")"
+DEL_MCP_ID=$(echo "$BODY" | jq -r '.id')
+
+# Developer creates an agent (no MCP links needed)
+parse_response "$(curl_post "$BASE_URL/api/v1/agents" \
+  "{\"name\":\"del-agent\",\"version\":\"1.0.0\",\"description\":\"$AGENT_DESC\",\"owner\":\"Dev\",\"prompt\":\"$AGENT_PROMPT\",\"model_name\":\"test\",\"goal_template\":{\"description\":\"Test\",\"sections\":[{\"name\":\"Output\"}]}}" "${DEV_AUTH[@]}")"
+DEL_AGENT_ID=$(echo "$BODY" | jq -r '.id')
+
+# T8.18 — User Cannot Delete Developer's MCP
+parse_response "$(curl_delete "$BASE_URL/api/v1/mcps/$DEL_MCP_ID" "${USR_AUTH[@]}")"
+assert_status "T8.18 User no delete MCP" 403 "$STATUS"
+
+# T8.19 — Developer Deletes Own MCP
+parse_response "$(curl_delete "$BASE_URL/api/v1/mcps/$DEL_MCP_ID" "${DEV_AUTH[@]}")"
+assert_status "T8.19 Dev delete MCP" 200 "$STATUS"
+
+# T8.20 — Verify MCP Deleted
+parse_response "$(curl_get "$BASE_URL/api/v1/mcps/$DEL_MCP_ID")"
+assert_status "T8.20 MCP gone" 404 "$STATUS"
+
+# T8.21 — User Cannot Delete Developer's Agent
+parse_response "$(curl_delete "$BASE_URL/api/v1/agents/$DEL_AGENT_ID" "${USR_AUTH[@]}")"
+assert_status "T8.21 User no delete agent" 403 "$STATUS"
+
+# T8.22 — Admin Can Delete Any Agent
+parse_response "$(curl_delete "$BASE_URL/api/v1/agents/$DEL_AGENT_ID" "${AUTH[@]}")"
+assert_status "T8.22 Admin delete agent" 200 "$STATUS"
+
+# T8.23 — Verify Agent Deleted
+parse_response "$(curl_get "$BASE_URL/api/v1/agents/$DEL_AGENT_ID")"
+assert_status "T8.23 Agent gone" 404 "$STATUS"
+
+# ══════════════════════════════════════════════════════════
+bold ""
 bold "═══ Results ═══"
 green "  Passed:  $PASS"
 if [ "$FAIL" -gt 0 ]; then red "  Failed:  $FAIL"; echo -e "  $FAILURES"
